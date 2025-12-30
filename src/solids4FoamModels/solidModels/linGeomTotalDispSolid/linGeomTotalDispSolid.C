@@ -26,6 +26,7 @@ License
 #include "fixedDisplacementZeroShearFvPatchVectorField.H"
 #include "symmetryFvPatchFields.H"
 #include "compatibilityFunctions.H"
+#include "cellZoneInterface.H"
 
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -37,6 +38,56 @@ namespace Foam
 
 namespace solidModels
 {
+
+// Debug function
+// void updateStress
+// (
+//     const volVectorField& D,
+//     const volTensorField& gradD,
+//     volSymmTensorField& sigma
+// )
+// {
+//     const fvMesh& mesh = gradD.mesh();
+
+//     const scalar mu1 = 7.69231e+10;
+//     const scalar mu0 = 7.40741e+09;
+
+//     const scalar lambda1 = 6.59341e+10;
+//     const scalar lambda0 = 7.97721e+09;
+
+//     forAll(mesh.cellZones()[0], cI)
+//     {
+//         const label cellID = mesh.cellZones()[0][cI];
+//         sigma[cellID] =
+//             mu0*symm(gradD[cellID]) + lambda0*tr(gradD[cellID])*symmTensor(I);
+//     }
+
+//     forAll(mesh.cellZones()[1], cI)
+//     {
+//         const label cellID = mesh.cellZones()[1][cI];
+//         sigma[cellID] =
+//             mu1*symm(gradD[cellID]) + lambda1*tr(gradD[cellID])*symmTensor(I);
+//     }
+
+//     // Zero gradient on traction boundaries
+//     forAll(sigma.boundaryField(), patchI)
+//     {
+//         if
+//         (
+//             isA<solidTractionFvPatchVectorField>
+//             (
+//                 D.boundaryField()[patchI]
+//             )
+//         )
+//         {
+//             sigma.boundaryFieldRef()[patchI] =
+//                 sigma.boundaryField()[patchI].patchInternalField();
+//         }
+//     }
+
+//     sigma.correctBoundaryConditions();
+// }
+
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -304,6 +355,30 @@ bool linGeomTotalDispSolid::evolveSnes()
 #ifdef USE_PETSC
     Info<< "Solving the momentum equation for D using PETSc SNES" << endl;
 
+    // DEBUG
+    // {
+    //     forAll(mesh().cellZones()[0], cI)
+    //     {
+    //         const label cellID = mesh().cellZones()[0][cI];
+    //         D().primitiveFieldRef()[cellID] = mesh().C()[cellID];
+    //     }
+    //     forAll(mesh().cellZones()[1], cI)
+    //     {
+    //         const label cellID = mesh().cellZones()[1][cI];
+    //         D().primitiveFieldRef()[cellID] =
+    //             mesh().C()[cellID]*mag(mesh().C()[cellID]);
+    //     }
+    //     D().correctBoundaryConditions();
+
+    //     gradD() = fvc::grad(D());
+
+    //     gradD().write();
+    //     D().write();
+
+    //     FatalError
+    //         << "stop" << exit(FatalError);
+    // }
+
     // Update D boundary conditions
     D().correctBoundaryConditions();
 
@@ -362,7 +437,13 @@ bool linGeomTotalDispSolid::evolveSnes()
     }
 
     // Update gradient of displacement
-    mechanical().grad(D(), gradD());
+    //mechanical().grad(D(), gradD());
+    gradD() = fvc::grad(D());
+    //updateStress(D(), gradD(), sigma()); // test
+    mechModel_.updateStress
+    (
+        gradD(), gradD().oldTime(), runTime().deltaTValue(), sigma()
+    );
 
     // Interpolate cell displacements to vertices
     mechanical().interpolate(D(), gradD(), pointD());
@@ -501,7 +582,8 @@ void linGeomTotalDispSolid::makePDiffusivity() const
 
     fvVectorMatrix approxJ
     (
-        fvm::laplacian(impKf_, D(), "laplacian(DD,D)")
+        // fvm::laplacian(impKf_, D(), "laplacian(DD,D)")
+        fvm::laplacian(impK_, D(), "laplacian(DD,D)")
       - rho()*fvm::d2dt2(D())
     );
 
@@ -593,6 +675,22 @@ linGeomTotalDispSolid::linGeomTotalDispSolid
         solvePressure()
       ? label(solidModel::twoD() ? 3 : 4)
       : label(solidModel::twoD() ? 2 : 3)
+    ),
+    mechModel_
+    (
+        mesh(),
+        IOdictionary
+        (
+            IOobject
+            (
+                "mechanicalProperties",
+                mesh().time().constant(),
+                mesh(),
+                IOobject::MUST_READ,
+                IOobject::NO_WRITE,
+                false // do not register
+            )
+        )
     ),
     ds_
     (
@@ -868,7 +966,8 @@ label linGeomTotalDispSolid::formResidual
     D.correctBoundaryConditions();
 
     // Update gradient of displacement
-    mechanical().grad(D, gradD());
+    //mechanical().grad(D, gradD());
+    gradD() = fvc::grad(D); // test
 
     // Enforce the boundary conditions again for any conditions that use gradD
     //D.correctBoundaryConditions();
@@ -877,7 +976,13 @@ label linGeomTotalDispSolid::formResidual
     U() = fvc::ddt(D);
 
     // Calculate the stress using run-time selectable mechanical law
-    mechanical().correct(sigma());
+    //mechanical().correct(sigma());
+    // updateStress(D, gradD(), sigma()); // test
+    mechModel_.updateStress
+    (
+        gradD(), gradD().oldTime(), runTime().deltaTValue(), sigma()
+    );
+
 
     if (solvePressure())
     {
@@ -902,6 +1007,9 @@ label linGeomTotalDispSolid::formResidual
     // Traction vectors at the faces
     surfaceVectorField traction(n & fvc::interpolate(sigma()));
 
+    // Flag indicating faces on a bi-material interface
+    const Field<bool> interface(cellZoneInterface(mesh, false));
+
     // Add stabilisation to the traction
     // We add this before enforcing the traction condition as the stabilisation
     // is set to zero on traction boundaries
@@ -909,7 +1017,24 @@ label linGeomTotalDispSolid::formResidual
     const scalar scaleFactor =
         readScalar(stabilisation().dict().lookup("scaleFactor"));
     const surfaceTensorField gradDf(fvc::interpolate(gradD()));
-    traction += scaleFactor*impKf_*(fvc::snGrad(D) - (n & gradDf));
+    //traction += scaleFactor*impKf_*(fvc::snGrad(D) - (n & gradDf));
+
+    surfaceVectorField stabilisationTraction
+    (
+        "stabilisationTraction",
+        scaleFactor*impKf_*(fvc::snGrad(D) - (n & gradDf))
+    );
+    const scalar interfaceScaleFactor =
+        readScalar(stabilisation().dict().lookup("interfaceScaleFactor"));
+    forAll(stabilisationTraction, faceI)
+    {
+        if (interface[faceI])
+        {
+            // Disable stabilisation on the interface
+            stabilisationTraction[faceI] *= interfaceScaleFactor;
+        }
+    }
+    traction += stabilisationTraction;
 
     // Enforce traction boundary conditions
     enforceTractionBoundaries(traction, D, n);
@@ -1030,7 +1155,8 @@ label linGeomTotalDispSolid::formJacobian
     // Calculate a segregated approximation of the Jacobian
     fvVectorMatrix approxJ
     (
-        fvm::laplacian(impKf_, D, "laplacian(DD,D)")
+        // fvm::laplacian(impKf_, D, "laplacian(DD,D)")
+        fvm::laplacian(impK_, D, "laplacian(DD,D)")
       - rho()*fvm::d2dt2(D)
     );
 

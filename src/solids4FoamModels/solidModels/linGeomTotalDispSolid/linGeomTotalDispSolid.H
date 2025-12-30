@@ -43,6 +43,7 @@ SourceFiles
 #include "uniformDimensionedFields.H"
 #include "foamPetscSnesHelper.H"
 
+#include "mechanicalConstitutiveLawManager.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -91,6 +92,9 @@ class linGeomTotalDispSolid
 
         //- Number of unknowns per cell, used by PETSc SNES solver
         const label blockSize_;
+
+        //- Mechanical constitutive law manager
+        mechanicalConstitutiveLawManager mechModel_;
 
         //- Field to provide fvOptions with the correct dimensions
         volScalarField ds_;
