@@ -43,8 +43,6 @@ SourceFiles
 #include "uniformDimensionedFields.H"
 #include "foamPetscSnesHelper.H"
 
-#include "mechanicalConstitutiveLawManager.H"
-
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 namespace Foam
@@ -69,7 +67,7 @@ class linGeomTotalDispSolid
         //- Implicit stiffness; coefficient of the Laplacian term
         //  The value of this term only affects convergence and not the answer
         //  In the case of Hookean elasticity, (2*mu + lambda) is the optimum
-        const volScalarField impK_;
+        volScalarField impK_;
 
         //- Implicit stiffness surface field
         surfaceScalarField impKf_;
@@ -77,7 +75,7 @@ class linGeomTotalDispSolid
         //- Reciprocal of impK
         //  We divide by impK every time tractionBoundarySnGrad is called so we
         //  will store the reciprocal for effficiency
-        const volScalarField rImpK_;
+        volScalarField rImpK_;
 
         //- Diffusivity for the pressure equation
         //  This controls the amount of smoothing in the pressure equation
@@ -92,9 +90,6 @@ class linGeomTotalDispSolid
 
         //- Number of unknowns per cell, used by PETSc SNES solver
         const label blockSize_;
-
-        //- Mechanical constitutive law manager
-        mechanicalConstitutiveLawManager mechModel_;
 
         //- Field to provide fvOptions with the correct dimensions
         volScalarField ds_;

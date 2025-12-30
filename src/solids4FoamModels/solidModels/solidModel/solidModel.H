@@ -42,6 +42,7 @@ SourceFiles
 #include "runTimeSelectionTables.H"
 #include "thermalModel.H"
 #include "mechanicalModel.H"
+#include "mechanicalConstitutiveLawManager.H"
 #include "nonLinearGeometry.H"
 #include "uniformDimensionedFields.H"
 #include "momentumStabilisation.H"
@@ -121,8 +122,11 @@ private:
         //- Thermal model
         mutable autoPtr<thermalModel> thermalPtr_;
 
-        //- Mechanical model
+        //- Mechanical model (OLD APPROACH)
         mutable autoPtr<mechanicalModel> mechanicalPtr_;
+
+        //- Mechanical constitutive law manager (NEW APPROACH)
+        mutable autoPtr<mechanicalConstitutiveLawManager> mechManagerPtr_;
 
         //- Boundary flag fields used by the leastSquaresS4f gradient scheme
         //  D field
@@ -275,6 +279,9 @@ private:
 
         //- Make the mechanical model
         void makeMechanicalModel() const;
+
+        //- Make the mechanicalConstitutiveLawManager
+        void makeMechanicalConstitutiveLawManager() const;
 
         //- Make the rho field
         void makeRho() const;
@@ -521,6 +528,12 @@ public:
 
             //- Return const reference to the mechanical model
             const mechanicalModel& mechanical() const;
+
+            //- Return non-const reference to the mechanical model
+            mechanicalConstitutiveLawManager& mechManager();
+
+            //- Return const reference to the mechanical model
+            const mechanicalConstitutiveLawManager& mechManager() const;
 
             //- Return non-const reference to D
             virtual volVectorField& D()

@@ -248,13 +248,42 @@ void Foam::solidModel::makeMechanicalModel() const
 {
     if (!mechanicalPtr_.empty())
     {
-        FatalErrorIn("void Foam::solidModel::makeMechanicalModel() const")
+        FatalErrorInFunction
             << "pointer already set!" << abort(FatalError);
     }
 
     mechanicalPtr_.set
     (
         new mechanicalModel(mesh(), nonLinGeom(), incremental())
+    );
+}
+
+
+void Foam::solidModel::makeMechanicalConstitutiveLawManager() const
+{
+    if (!mechManagerPtr_.empty())
+    {
+        FatalErrorInFunction
+            << "pointer already set!" << abort(FatalError);
+    }
+
+    mechManagerPtr_.set
+    (
+        new mechanicalConstitutiveLawManager
+        (
+            mesh(),
+            IOdictionary
+            (
+                IOobject
+                (
+                    "mechanicalProperties",
+                    mesh().time().constant(),
+                    mesh(),
+                    IOobject::MUST_READ,
+                    IOobject::NO_WRITE
+                )
+            )
+        )
     );
 }
 
@@ -682,6 +711,7 @@ Foam::solidModel::solidModel
     ),
     thermalPtr_(),
     mechanicalPtr_(),
+    mechManagerPtr_(),
     useBoundaryFaceValuesD_
     (
         IOobject
@@ -1065,6 +1095,30 @@ const Foam::mechanicalModel& Foam::solidModel::mechanical() const
     }
 
     return mechanicalPtr_();
+}
+
+
+Foam::mechanicalConstitutiveLawManager&
+Foam::solidModel::mechManager()
+{
+    if (mechManagerPtr_.empty())
+    {
+        makeMechanicalConstitutiveLawManager();
+    }
+
+    return mechManagerPtr_();
+}
+
+
+const Foam::mechanicalConstitutiveLawManager&
+Foam::solidModel::mechManager() const
+{
+    if (mechManagerPtr_.empty())
+    {
+        makeMechanicalConstitutiveLawManager();
+    }
+
+    return mechManagerPtr_();
 }
 
 

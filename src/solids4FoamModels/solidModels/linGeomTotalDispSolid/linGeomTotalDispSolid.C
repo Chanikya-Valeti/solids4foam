@@ -39,56 +39,6 @@ namespace Foam
 namespace solidModels
 {
 
-// Debug function
-// void updateStress
-// (
-//     const volVectorField& D,
-//     const volTensorField& gradD,
-//     volSymmTensorField& sigma
-// )
-// {
-//     const fvMesh& mesh = gradD.mesh();
-
-//     const scalar mu1 = 7.69231e+10;
-//     const scalar mu0 = 7.40741e+09;
-
-//     const scalar lambda1 = 6.59341e+10;
-//     const scalar lambda0 = 7.97721e+09;
-
-//     forAll(mesh.cellZones()[0], cI)
-//     {
-//         const label cellID = mesh.cellZones()[0][cI];
-//         sigma[cellID] =
-//             mu0*symm(gradD[cellID]) + lambda0*tr(gradD[cellID])*symmTensor(I);
-//     }
-
-//     forAll(mesh.cellZones()[1], cI)
-//     {
-//         const label cellID = mesh.cellZones()[1][cI];
-//         sigma[cellID] =
-//             mu1*symm(gradD[cellID]) + lambda1*tr(gradD[cellID])*symmTensor(I);
-//     }
-
-//     // Zero gradient on traction boundaries
-//     forAll(sigma.boundaryField(), patchI)
-//     {
-//         if
-//         (
-//             isA<solidTractionFvPatchVectorField>
-//             (
-//                 D.boundaryField()[patchI]
-//             )
-//         )
-//         {
-//             sigma.boundaryFieldRef()[patchI] =
-//                 sigma.boundaryField()[patchI].patchInternalField();
-//         }
-//     }
-
-//     sigma.correctBoundaryConditions();
-// }
-
-
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
 defineTypeNameAndDebug(linGeomTotalDispSolid, 0);
@@ -439,8 +389,7 @@ bool linGeomTotalDispSolid::evolveSnes()
     // Update gradient of displacement
     //mechanical().grad(D(), gradD());
     gradD() = fvc::grad(D());
-    //updateStress(D(), gradD(), sigma()); // test
-    mechModel_.updateStress
+    mechManager().updateStressSmallStrain
     (
         gradD(), gradD().oldTime(), runTime().deltaTValue(), sigma()
     );
@@ -676,22 +625,6 @@ linGeomTotalDispSolid::linGeomTotalDispSolid
       ? label(solidModel::twoD() ? 3 : 4)
       : label(solidModel::twoD() ? 2 : 3)
     ),
-    mechModel_
-    (
-        mesh(),
-        IOdictionary
-        (
-            IOobject
-            (
-                "mechanicalProperties",
-                mesh().time().constant(),
-                mesh(),
-                IOobject::MUST_READ,
-                IOobject::NO_WRITE,
-                false // do not register
-            )
-        )
-    ),
     ds_
     (
         IOobject
@@ -817,6 +750,19 @@ linGeomTotalDispSolid::linGeomTotalDispSolid
             }
         }
     }
+
+    // Update impK scalar approximate material tangent and stress
+    mechManager().updateStressSmallStrain
+    (
+        gradD(),
+        gradD().oldTime(),
+        runTime.deltaTValue(),
+        sigma(),
+        &impK_,
+        tangentRequest::scalar
+    );
+    impKf_ = fvc::interpolate(impK_);
+    rImpK_ = 1.0/impK_;
 }
 
 
@@ -977,12 +923,10 @@ label linGeomTotalDispSolid::formResidual
 
     // Calculate the stress using run-time selectable mechanical law
     //mechanical().correct(sigma());
-    // updateStress(D, gradD(), sigma()); // test
-    mechModel_.updateStress
+    mechManager().updateStressSmallStrain
     (
         gradD(), gradD().oldTime(), runTime().deltaTValue(), sigma()
     );
-
 
     if (solvePressure())
     {
