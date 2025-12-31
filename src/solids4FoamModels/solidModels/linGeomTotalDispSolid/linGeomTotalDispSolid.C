@@ -275,7 +275,8 @@ bool linGeomTotalDispSolid::evolveImplicitSegregated()
         );
 
         // Interpolate cell displacements to vertices
-        mechanical().interpolate(D(), gradD(), pointD());
+        solidModel::volToPoint().interpolate(D(), gradD(), pointD());
+        pointD().correctBoundaryConditions();
 
         // Increment of displacement
         DD() = D() - D().oldTime();
@@ -302,30 +303,6 @@ bool linGeomTotalDispSolid::evolveSnes()
 {
 #ifdef USE_PETSC
     Info<< "Solving the momentum equation for D using PETSc SNES" << endl;
-
-    // DEBUG
-    // {
-    //     forAll(mesh().cellZones()[0], cI)
-    //     {
-    //         const label cellID = mesh().cellZones()[0][cI];
-    //         D().primitiveFieldRef()[cellID] = mesh().C()[cellID];
-    //     }
-    //     forAll(mesh().cellZones()[1], cI)
-    //     {
-    //         const label cellID = mesh().cellZones()[1][cI];
-    //         D().primitiveFieldRef()[cellID] =
-    //             mesh().C()[cellID]*mag(mesh().C()[cellID]);
-    //     }
-    //     D().correctBoundaryConditions();
-
-    //     gradD() = fvc::grad(D());
-
-    //     gradD().write();
-    //     D().write();
-
-    //     FatalError
-    //         << "stop" << exit(FatalError);
-    // }
 
     // Update D boundary conditions
     D().correctBoundaryConditions();
@@ -394,7 +371,7 @@ bool linGeomTotalDispSolid::evolveSnes()
     );
 
     // Interpolate cell displacements to vertices
-    mechanical().interpolate(D(), gradD(), pointD());
+    solidModel::volToPoint().interpolate(D(), gradD(), pointD());
     pointD().correctBoundaryConditions();
 
     // Increment of displacement
@@ -448,7 +425,7 @@ bool linGeomTotalDispSolid::evolveExplicit()
     volTensorField& gradD = solidModel::gradD();
     volVectorField& U = solidModel::U();
     volSymmTensorField& sigma = solidModel::sigma();
-    const volScalarField& rho = solidModel::rho();
+    const volScalarField& rho = mechManager().rho();
 
     // Central difference scheme
 
@@ -535,12 +512,12 @@ void linGeomTotalDispSolid::makePDiffusivity() const
     (
         // fvm::laplacian(impKf_, D(), "laplacian(DD,D)")
         fvm::laplacian(impK_, D(), "laplacian(DD,D)")
-      - rho()*fvm::d2dt2(D())
+      - mechManager().rho()*fvm::d2dt2(D())
     );
 
     if (dampingCoeff().value() > SMALL)
     {
-        approxJ -= dampingCoeff()*rho()*fvmDdtVectorCompat(D());
+        approxJ -= dampingCoeff()*mechManager().rho()*fvmDdtVectorCompat(D());
     }
 
     // Optional: under-relaxation of the linear system
@@ -600,12 +577,45 @@ linGeomTotalDispSolid::linGeomTotalDispSolid
     ),
     impK_
     (
-        solvePressure()
-      ? 2.0*mechanical().shearModulus()
-      : mechanical().impK()
+        IOobject
+        (
+            "impK",
+            mesh().time().timeName(),
+            mesh(),
+            IOobject::READ_IF_PRESENT,
+            IOobject::NO_WRITE
+        ),
+        mesh(),
+        dimensionedScalar("zero", dimPressure, 0.0),
+        "zeroGradient"
     ),
-    impKf_(fvc::interpolate(impK_)),
-    rImpK_(1.0/impK_),
+    impKf_
+    (
+        IOobject
+        (
+            "impKf",
+            mesh().time().timeName(),
+            mesh(),
+            IOobject::READ_IF_PRESENT,
+            IOobject::NO_WRITE
+        ),
+        mesh(),
+        dimensionedScalar("zero", dimPressure, 0.0)
+    ),
+    rImpK_
+    (
+        IOobject
+        (
+            "rImpK",
+            mesh().time().timeName(),
+            mesh(),
+            IOobject::READ_IF_PRESENT,
+            IOobject::NO_WRITE
+        ),
+        mesh(),
+        dimensionedScalar("zero", dimless/dimPressure, 0.0),
+        "zeroGradient"
+    ),
     pDiffusivityPtr_(),
     A_
     (
@@ -649,10 +659,29 @@ linGeomTotalDispSolid::linGeomTotalDispSolid
     // For consistent restarts, we will calculate the gradient field
     D().correctBoundaryConditions();
     D().storePrevIter();
-    //mechanical().grad(D(), gradD());
 
     Info<< "solvePressure = " << solvePressure() << endl;
 
+    // Set the type of scalar material tangent to be requested
+    const tangentRequest tangentReq =
+        solvePressure()
+      ? tangentRequest::scalarDeviatoric
+      : tangentRequest::scalar;
+
+    // Update impK (scalar approximate material tangent) and stress
+    mechManager().updateStressSmallStrain
+    (
+        gradD(),
+        gradD().oldTime(),
+        runTime.deltaTValue(),
+        sigma(),
+        &impK_,
+        tangentReq
+    );
+    impKf_ = fvc::interpolate(impK_);
+    rImpK_ = 1.0/impK_;
+
+    // Check solution algorithm
     if (solvePressure())
     {
         if (solutionAlg() != solutionAlgorithm::PETSC_SNES)
@@ -752,19 +781,6 @@ linGeomTotalDispSolid::linGeomTotalDispSolid
             }
         }
     }
-
-    // Update impK scalar approximate material tangent and stress
-    mechManager().updateStressSmallStrain
-    (
-        gradD(),
-        gradD().oldTime(),
-        runTime.deltaTValue(),
-        sigma(),
-        &impK_,
-        tangentRequest::scalar
-    );
-    impKf_ = fvc::interpolate(impK_);
-    rImpK_ = 1.0/impK_;
 }
 
 
@@ -778,7 +794,7 @@ void linGeomTotalDispSolid::setDeltaT(Time& runTime)
         // Max wave speed in the domain
         const scalar waveSpeed = max
         (
-            Foam::sqrt(mechanical().impK()/mechanical().rho())
+            Foam::sqrt(mechManager().kappa()/mechManager().rho())
         ).value();
 
         // deltaT = cellWidth/waveVelocity == (1.0/deltaCoeff)/waveSpeed
@@ -786,8 +802,8 @@ void linGeomTotalDispSolid::setDeltaT(Time& runTime)
         // time-step. This means that we use 1/(2*d) == 0.5*deltaCoeff when
         // calculating the required stable time-step
         // i.e. deltaT = (1.0/(0.5*deltaCoeff)/waveSpeed
-        // For safety, we should use a time-step smaller than this e.g. Abaqus uses
-        // stableTimeStep/sqrt(2): we will default to this value
+        // For safety, we should use a time-step smaller than this e.g. Abaqus
+        // uses stableTimeStep/sqrt(2): we will default to this value
         const scalar requiredDeltaT =
             1.0/
             gMax
@@ -969,7 +985,10 @@ label linGeomTotalDispSolid::formResidual
         scaleFactor*impKf_*(fvc::snGrad(D) - (n & gradDf))
     );
     const scalar interfaceScaleFactor =
-        readScalar(stabilisation().dict().lookup("interfaceScaleFactor"));
+        stabilisation().dict().lookupOrDefault
+        (
+            "interfaceScaleFactor", scaleFactor
+        );
     forAll(stabilisationTraction, faceI)
     {
         if (interface[faceI])
@@ -990,7 +1009,7 @@ label linGeomTotalDispSolid::formResidual
     vectorField residual
     (
         fvc::div(mesh.magSf()*traction)
-      + rho()
+      + mechManager().rho()
        *(
             g() - fvc::d2dt2(D) - dampingCoeff()*fvc::ddt(D)
         )
@@ -1021,28 +1040,23 @@ label linGeomTotalDispSolid::formResidual
         volScalarField& p = const_cast<volScalarField&>(this->p());
 
         // Calculate pressure equation residual
-        // Res = p/k + div(D) - gamma*laplacian(p) + gamma*div(grad(p))
+        // Res = p/kappa + div(D) - gamma*laplacian(p) + gamma*div(grad(p))
         // where
-        //   - k: bulk modulus
+        //   - kappa: bulk modulus
         //   - gamma: "pDiffusivity" controls the amount of smoothing
 
-        // scalarField pressureResidual
-        // (
-        //   - p
-        //   + fvc::laplacian(pDiffusivity(), p, "laplacian(Dp,p)")
-        //   - fvc::div(pDiffusivity()*mesh.Sf() & fvc::interpolate(fvc::grad(p)))
-        //   - mechanical().bulkModulus()*tr(gradD())
-        //   //- mechanical().bulkModulus()*fvc::div(D)
-        // );
-
         // Divided by bulkModulus form
-        const volScalarField kappa("kappa", mechanical().bulkModulus());
+        const volScalarField kappa("kappa", mechManager().kappa());
         const surfaceScalarField kappaf(fvc::interpolate(kappa));
         scalarField pressureResidual
         (
           - p/kappa
           + fvc::laplacian(pDiffusivity()/kappaf, p, "laplacian(Dp,p)")
-          - fvc::div((pDiffusivity()/kappaf)*mesh.Sf() & fvc::interpolate(fvc::grad(p)))
+          - fvc::div
+            (
+                (pDiffusivity()/kappaf)*mesh.Sf()
+              & fvc::interpolate(fvc::grad(p))
+            )
           - tr(gradD())
         );
 
@@ -1101,12 +1115,12 @@ label linGeomTotalDispSolid::formJacobian
     (
         // fvm::laplacian(impKf_, D, "laplacian(DD,D)")
         fvm::laplacian(impK_, D, "laplacian(DD,D)")
-      - rho()*fvm::d2dt2(D)
+      - mechManager().rho()*fvm::d2dt2(D)
     );
 
     if (dampingCoeff().value() > SMALL)
     {
-        approxJ -= dampingCoeff()*rho()*fvm::ddt(D);
+        approxJ -= dampingCoeff()*mechManager().rho()*fvm::ddt(D);
     }
 
     // Optional: under-relaxation of the linear system
@@ -1122,8 +1136,7 @@ label linGeomTotalDispSolid::formJacobian
     {
         const volScalarField& p = this->p();
 
-        const volScalarField kappa("kappa", mechanical().bulkModulus());
-        //const volScalarField rKappa(1.0/mechanical().bulkModulus());
+        const volScalarField kappa("kappa", mechManager().kappa());
         const volScalarField rKappa(1.0/kappa);
         const surfaceScalarField kappaf(fvc::interpolate(kappa));
         {
@@ -1271,9 +1284,9 @@ label linGeomTotalDispSolid::precondition
             fvVectorMatrix DEqn
             (
                 fvm::laplacian(impKf_, D, "preconditionD")
-              - rho()*fvm::d2dt2(D)
+              - mechManager().rho()*fvm::d2dt2(D)
               + fvc::div(mesh.magSf()*tractionExp)
-              + rho()*g()
+              + mechManager().rho()*g()
 #ifdef OPENFOAM_COM
               + fvOptions()(ds_, D)
 #endif
@@ -1282,7 +1295,7 @@ label linGeomTotalDispSolid::precondition
             // Add damping
             if (dampingCoeff().value() > SMALL)
             {
-                DEqn += dampingCoeff()*rho()*fvm::ddt(D);
+                DEqn += dampingCoeff()*mechManager().rho()*fvm::ddt(D);
             }
 
             // Add to the source
@@ -1292,10 +1305,13 @@ label linGeomTotalDispSolid::precondition
             DEqn.solve("preconditionD");
 
             // Update gradient of displacement
-            mechanical().grad(D, gradD);
+            gradD = fvc::grad(D);
 
             // Calculate the stress using run-time selectable mechanical law
-            mechanical().correct(sigma);
+            mechManager().updateStressSmallStrain
+            (
+                gradD, gradD.oldTime(), runTime().deltaTValue(), sigma
+            );
         }
         while (++iCorr < convParam.maxIterations_);
 

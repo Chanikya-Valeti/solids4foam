@@ -56,6 +56,10 @@ SourceFiles
 #include "checkConvergence.H"
 #include "boolIOList.H"
 #include "compatibilityFunctions.H"
+#include "enhancedVolPointInterpolation.H"
+#ifdef FOAM_EXTEND
+    #include "newLeastSquaresVolPointInterpolation.H"
+#endif
 #ifdef OPENFOAM_COM
     #include "Enum.H"
     #include "fvOptions.H"
@@ -313,6 +317,18 @@ private:
 protected:
 
     // Protected member functions
+
+        //- Return a const reference to the vol-to-point base mesh
+        //  interpolator based on the "enhanced" method, where values are
+        //  extrapolated from cell centres to vertices and averaged
+        const enhancedVolPointInterpolation& volToPoint() const;
+
+        //- Return a const reference to the vol-to-point base mesh
+        //  interpolator based on the least squares method
+#ifdef FOAM_EXTEND
+        const newLeastSquaresVolPointInterpolation&
+            volToPointLeastSquares() const;
+#endif
 
         //- Make the dual mesh from the mesh
         void makeDualMesh() const;
