@@ -30,7 +30,9 @@ License
 #include "fvcGradf.H"
 #include "wedgePolyPatch.H"
 #include "meshTools.H"
+#include "cellCentredIntegrationPointTopology.H"
 #include "addToRunTimeSelectionTable.H"
+
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -261,11 +263,13 @@ void Foam::solidModel::makeMechanicalModel() const
 
 void Foam::solidModel::makeMechanicalConstitutiveLawManager() const
 {
-    if (!mechManagerPtr_.empty())
+    if (!mechManagerPtr_.empty() || !ipTopologyPtr_.empty())
     {
         FatalErrorInFunction
             << "pointer already set!" << abort(FatalError);
     }
+
+    ipTopologyPtr_.set(new cellCentredIntegrationPointTopology(mesh()));
 
     mechManagerPtr_.set
     (
@@ -282,7 +286,8 @@ void Foam::solidModel::makeMechanicalConstitutiveLawManager() const
                     IOobject::MUST_READ,
                     IOobject::NO_WRITE
                 )
-            )
+            ),
+            ipTopologyPtr_()
         )
     );
 }
@@ -726,6 +731,7 @@ Foam::solidModel::solidModel
     ),
     thermalPtr_(),
     mechanicalPtr_(),
+    ipTopologyPtr_(),
     mechManagerPtr_(),
     useBoundaryFaceValuesD_
     (

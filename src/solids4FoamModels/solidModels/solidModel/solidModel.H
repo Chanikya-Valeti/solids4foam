@@ -72,6 +72,9 @@ SourceFiles
 namespace Foam
 {
 
+// Forward Declarations
+class integrationPointTopology;
+
 /*---------------------------------------------------------------------------* \
                            Class solidModel Declaration
 \*---------------------------------------------------------------------------*/
@@ -128,6 +131,9 @@ private:
 
         //- Mechanical model (OLD APPROACH)
         mutable autoPtr<mechanicalModel> mechanicalPtr_;
+
+        //- Integration-point topology used by the constitutive law manager
+        mutable autoPtr<integrationPointTopology> ipTopologyPtr_;
 
         //- Mechanical constitutive law manager (NEW APPROACH)
         mutable autoPtr<mechanicalConstitutiveLawManager> mechManagerPtr_;
