@@ -56,10 +56,13 @@ void linGeomTotalDispSolid::predict()
     D() = D().oldTime() + U()*runTime().deltaT();
 
     // Update gradient of displacement
-    mechanical().grad(D(), gradD());
+    gradD() = fvc::grad(D());
 
     // Calculate the stress using run-time selectable mechanical law
-    mechanical().correct(sigma());
+    mechManager().updateStressSmallStrain
+    (
+        gradD(), gradD().oldTime(), runTime().deltaTValue(), sigma()
+    );
 }
 
 
@@ -250,18 +253,13 @@ bool linGeomTotalDispSolid::evolveImplicitSegregated()
             DD() = D() - D().oldTime();
 
             // Update gradient of displacement
-            mechanical().grad(D(), gradD());
-
-            // Update gradient of displacement increment
-            gradDD() = gradD() - gradD().oldTime();
-
-            // Update the momentum equation inverse diagonal field
-            // This may be used by the mechanical law when calculating the
-            // hydrostatic pressure
-            const volScalarField DEqnA("DEqnA", DEqn.A());
+            gradD() = fvc::grad(D());
 
             // Calculate the stress using run-time selectable mechanical law
-            mechanical().correct(sigma());
+            mechManager().updateStressSmallStrain
+            (
+                gradD(), gradD().oldTime(), runTime().deltaTValue(), sigma()
+            );
         }
         while
         (
@@ -387,8 +385,9 @@ bool linGeomTotalDispSolid::evolveSnes()
     }
 
     // Update gradient of displacement
-    //mechanical().grad(D(), gradD());
     gradD() = fvc::grad(D());
+
+    // Update the stress
     mechManager().updateStressSmallStrain
     (
         gradD(), gradD().oldTime(), runTime().deltaTValue(), sigma()
@@ -485,10 +484,13 @@ bool linGeomTotalDispSolid::evolveExplicit()
     }
 
     // Update gradient of displacement
-    mechanical().grad(D, gradD);
+    gradD = fvc::grad(D);
 
-    // Calculate the stress using run-time selectable mechanical law
-    mechanical().correct(sigma);
+    // Update the stress
+    mechManager().updateStressSmallStrain
+    (
+        gradD, gradD.oldTime(), deltaT.value(), sigma
+    );
 
     // Unit normal vectors at the faces
     const surfaceVectorField n(mesh.Sf()/mesh.magSf());
@@ -647,7 +649,7 @@ linGeomTotalDispSolid::linGeomTotalDispSolid
     // For consistent restarts, we will calculate the gradient field
     D().correctBoundaryConditions();
     D().storePrevIter();
-    mechanical().grad(D(), gradD());
+    //mechanical().grad(D(), gradD());
 
     Info<< "solvePressure = " << solvePressure() << endl;
 
@@ -912,17 +914,15 @@ label linGeomTotalDispSolid::formResidual
     D.correctBoundaryConditions();
 
     // Update gradient of displacement
-    //mechanical().grad(D, gradD());
-    gradD() = fvc::grad(D); // test
+    gradD() = fvc::grad(D);
 
     // Enforce the boundary conditions again for any conditions that use gradD
-    //D.correctBoundaryConditions();
+    D.correctBoundaryConditions();
 
     // Update velocity
     U() = fvc::ddt(D);
 
     // Calculate the stress using run-time selectable mechanical law
-    //mechanical().correct(sigma());
     mechManager().updateStressSmallStrain
     (
         gradD(), gradD().oldTime(), runTime().deltaTValue(), sigma()
