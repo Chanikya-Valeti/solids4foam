@@ -453,17 +453,6 @@ bool Foam::solidModel::newTimeStep() const
 }
 
 
-Foam::volScalarField& Foam::solidModel::rho()
-{
-    if (rhoPtr_.empty())
-    {
-        makeRho();
-    }
-
-    return rhoPtr_();
-}
-
-
 void Foam::solidModel::setCellDisps(fvVectorMatrix& DEqn)
 {
     if (setCellDisps().cellIDs().size() == 0)
@@ -1078,6 +1067,11 @@ Foam::solidModel::~solidModel()
 
 const Foam::volScalarField& Foam::solidModel::rho() const
 {
+    if (mechManagerPtr_.valid())
+    {
+        return mechManagerPtr_->rho();
+    }
+
     if (rhoPtr_.empty())
     {
         makeRho();
@@ -1340,7 +1334,14 @@ Foam::vector Foam::solidModel::pointU(const label pointID) const
         dimensionedVector("0", dimVelocity, vector::zero)
     );
 
-    mechanical().volToPoint().interpolate(U(), pointU);
+    if (mechanicalPtr_.valid())
+    {
+        mechanical().volToPoint().interpolate(U(), pointU);
+    }
+    else
+    {
+        volToPoint().interpolate(U(), pointU);
+    }
 
     return pointU.internalField()[pointID];
 }
@@ -1398,19 +1399,15 @@ Foam::tmp<Foam::vectorField> Foam::solidModel::faceZoneAcceleration
 
 void Foam::solidModel::updateTotalFields()
 {
-    Info<< __LINE__ << endl;
     if (mechanicalPtr_.valid())
     {
-    Info<< __LINE__ << endl;
         mechanicalPtr_->updateTotalFields();
     }
 
     if (mechManagerPtr_.valid())
     {
-    Info<< __LINE__ << endl;
         mechManagerPtr_->endTimeStep();
     }
-    Info<< __LINE__ << endl;
 }
 
 
@@ -1422,12 +1419,12 @@ void Foam::solidModel::end()
     );
     solidProperties_.regIOobject::write();
 
-    if (!mechanicalPtr_.empty())
+    if (mechanicalPtr_.valid())
     {
         mechanical().writeDict();
     }
 
-    if (!thermalPtr_.empty())
+    if (thermalPtr_.valid())
     {
         thermal().IOobject::rename
         (
@@ -1780,11 +1777,14 @@ void Foam::solidModel::writeFields(const Time& runTime)
 
 Foam::scalar Foam::solidModel::newDeltaT()
 {
-    return min
-    (
-        runTime().deltaTValue(),
-        mechanical().newDeltaT()
-    );
+    scalar dt = runTime().deltaTValue();
+
+    if (mechanicalPtr_.valid())
+    {
+        dt = min(dt, mechanical().newDeltaT());
+    }
+    
+    return dt;
 }
 
 void Foam::solidModel::moveMesh

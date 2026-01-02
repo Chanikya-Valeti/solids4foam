@@ -163,6 +163,9 @@ bool linGeomTotalDispSolid::evolveImplicitSegregated()
         // Unit normal vectors at the faces
         const surfaceVectorField n(mesh().Sf()/mesh().magSf());
 
+        // Take a reference to the density field
+        const volScalarField& rho = mechManager().rho();
+
         // Momentum equation loop
         do
         {
@@ -187,11 +190,11 @@ bool linGeomTotalDispSolid::evolveImplicitSegregated()
             // Linear momentum equation total displacement form
             fvVectorMatrix DEqn
             (
-                rho()*fvm::d2dt2(D())
+                rho*fvm::d2dt2(D())
              == fvm::laplacian(impKf_, D(), "laplacian(DD,D)")
               - fvc::laplacian(impKf_, D(), "laplacian(DD,D)")
               + fvc::div(mesh().magSf()*traction)
-              + rho()*g()
+              + rho*g()
 #ifdef OPENFOAM_COM
               + fvOptions()(ds_, D())
 #endif
@@ -200,7 +203,7 @@ bool linGeomTotalDispSolid::evolveImplicitSegregated()
             // Add damping
             if (dampingCoeff().value() > SMALL)
             {
-                DEqn += dampingCoeff()*rho()*fvm::ddt(D());
+                DEqn += dampingCoeff()*rho*fvm::ddt(D());
             }
 
             // Under-relaxation the linear system
@@ -508,16 +511,18 @@ void linGeomTotalDispSolid::makePDiffusivity() const
         readScalar(solidModelDict().lookup("pressureSmoothingCoeff"))
     );
 
+    // Take a reference to the density field
+    const volScalarField& rho = mechManager().rho();
+
     fvVectorMatrix approxJ
     (
-        // fvm::laplacian(impKf_, D(), "laplacian(DD,D)")
-        fvm::laplacian(impK_, D(), "laplacian(DD,D)")
-      - mechManager().rho()*fvm::d2dt2(D())
+        fvm::laplacian(impKf_, D(), "laplacian(DD,D)")
+      - rho*fvm::d2dt2(D())
     );
 
     if (dampingCoeff().value() > SMALL)
     {
-        approxJ -= dampingCoeff()*mechManager().rho()*fvmDdtVectorCompat(D());
+        approxJ -= dampingCoeff()*rho*fvmDdtVectorCompat(D());
     }
 
     // Optional: under-relaxation of the linear system
@@ -1110,17 +1115,19 @@ label linGeomTotalDispSolid::formJacobian
         p.correctBoundaryConditions();
     }
 
+    // Take a reference to the density field
+    const volScalarField& rho = mechManager().rho();
+
     // Calculate a segregated approximation of the Jacobian
     fvVectorMatrix approxJ
     (
-        // fvm::laplacian(impKf_, D, "laplacian(DD,D)")
-        fvm::laplacian(impK_, D, "laplacian(DD,D)")
-      - mechManager().rho()*fvm::d2dt2(D)
+        fvm::laplacian(impKf_, D, "laplacian(DD,D)")
+      - rho*fvm::d2dt2(D)
     );
 
     if (dampingCoeff().value() > SMALL)
     {
-        approxJ -= dampingCoeff()*mechManager().rho()*fvm::ddt(D);
+        approxJ -= dampingCoeff()*rho*fvm::ddt(D);
     }
 
     // Optional: under-relaxation of the linear system
@@ -1218,111 +1225,14 @@ label linGeomTotalDispSolid::precondition
     blockLduMatrix::debug = 0;
 #endif
 
-    const dictionary& precondDict
-    (
-        solidModelDict().subDict("preconditioner")
-    );
-    const Switch simplifiedEquation
-    (
-        precondDict.lookup("simplifiedEquation")
-    );
+    // Build scalar Laplacian for this component
+    fvVectorMatrix DEqn(fvm::laplacian(impKf_, D, "preconditionD"));
 
-    if (simplifiedEquation)
-    {
-        // Build scalar Laplacian for this component
-        fvVectorMatrix DEqn(fvm::laplacian(impKf_, D, "preconditionD"));
+    // Overwrite the source
+    DEqn.source() = rhs;
 
-        // Overwrite the source
-        DEqn.source() = rhs;
-
-        // Solve
-        DEqn.solve("preconditionD");
-    }
-    else // Solve full solid mechanics system
-    {
-        // Make a copy of D as we will reset it at the end of this function
-        volTensorField& gradD = this->gradD();
-        volSymmTensorField& sigma = this->sigma();
-        const volVectorField backupD("backupD", D);
-        const volTensorField backupGradD("backupGradD", gradD);
-        const volSymmTensorField backupSigma("backupSigma", sigma);
-
-        // For now, reset the D internal field
-        D = dimensionedVector(dimLength, vector::zero);
-        gradD = dimensionedTensor(dimless, tensor::zero);
-
-        // Loop tolerances, iterators and residuals
-        int iCorr = 0;
-        const convergenceParameters convParam =
-            readConvergenceParameters(precondDict);
-
-        do
-        {
-            // Calculate traction vectors at the faces
-            //surfaceVectorField traction(n & fvc::interpolate(sigma));
-            surfaceVectorField tractionExp
-            (
-                (n & fvc::interpolate(sigma))
-              - impKf_*fvc::snGrad(D) // explicit laplacian
-            );
-
-            // Add stabilisation to the traction
-            // We add this before enforcing the traction condition as the stabilisation
-            // is set to zero on traction boundaries
-            const scalar scaleFactor =
-                readScalar(stabilisation().dict().lookup("scaleFactor"));
-            const surfaceTensorField gradDf(fvc::interpolate(gradD));
-            tractionExp += scaleFactor*impKf_*(fvc::snGrad(D) - (n & gradDf));
-
-            // Enforce zero boundary contributions
-            forAll(tractionExp.boundaryField(), patchI)
-            {
-                tractionExp.boundaryFieldRef()[patchI] = vector::zero;
-            }
-
-            // Linear momentum equation total displacement form
-            fvVectorMatrix DEqn
-            (
-                fvm::laplacian(impKf_, D, "preconditionD")
-              - mechManager().rho()*fvm::d2dt2(D)
-              + fvc::div(mesh.magSf()*tractionExp)
-              + mechManager().rho()*g()
-#ifdef OPENFOAM_COM
-              + fvOptions()(ds_, D)
-#endif
-            );
-
-            // Add damping
-            if (dampingCoeff().value() > SMALL)
-            {
-                DEqn += dampingCoeff()*mechManager().rho()*fvm::ddt(D);
-            }
-
-            // Add to the source
-            DEqn.source() += rhs;
-
-            // Solve
-            DEqn.solve("preconditionD");
-
-            // Update gradient of displacement
-            gradD = fvc::grad(D);
-
-            // Calculate the stress using run-time selectable mechanical law
-            mechManager().updateStressSmallStrain
-            (
-                gradD, gradD.oldTime(), runTime().deltaTValue(), sigma
-            );
-        }
-        while (++iCorr < convParam.maxIterations_);
-
-        // Reset fields
-        D.internalFieldRef() = backupD.internalField();
-        D.correctBoundaryConditions();
-        gradD.internalFieldRef() = backupGradD.internalField();
-        gradD.correctBoundaryConditions();
-        sigma.internalFieldRef() = backupSigma.internalField();
-        sigma.correctBoundaryConditions();
-    }
+    // Solve
+    DEqn.solve("preconditionD");
 
     // Write back to PETSc y
     foamPetscSnesHelper::InsertFieldComponents<vector>

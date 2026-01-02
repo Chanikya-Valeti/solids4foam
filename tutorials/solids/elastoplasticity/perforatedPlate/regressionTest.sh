@@ -21,12 +21,12 @@ YIELD_MAX=32
 SOLVER_LOGFILE="log.solids4Foam"
 ALLRUN_LOGFILE="log.Allrun"
 
-echo "============================================================"
+echo "=================================================================="
 echo "Elastoplastic perforated plate regression test"
-echo "Max epsilonEq           in [${EPSILON_MIN}, ${EPSILON_MAX}]"
-echo "Max sigmaEq (von Mises) in [${SIGMA_MIN}, ${SIGMA_MAX}]"
-echo "Yielding cells          in [${YIELD_MIN}, ${YIELD_MAX}]"
-echo "============================================================"
+echo "Max epsilonEq                  in [${EPSILON_MIN}, ${EPSILON_MAX}]"
+echo "Max sigmaEq (von Mises)        in [${SIGMA_MIN}, ${SIGMA_MAX}]"
+echo "Yielding integration points    in [${YIELD_MIN}, ${YIELD_MAX}]"
+echo "=================================================================="
 echo
 
 # Clean case
@@ -51,11 +51,11 @@ extract_max_sigma() {
         | tail -n 1
 }
 
-extract_yielding_cells() {
-    grep "cells .* are actively yielding" "${SOLVER_LOGFILE}" \
+extract_yielding() {
+    grep "Number of yielding integration points =" "${SOLVER_LOGFILE}" \
         | tail -n 101 \
         | head -n 1 \
-        | awk '{print $1}'
+        | awk -F'[=/]' '{print $2}'
 }
 
 # ------------------------------------------------------------
@@ -64,9 +64,9 @@ extract_yielding_cells() {
 
 epsilon=$(extract_max_epsilon)
 sigma=$(extract_max_sigma)
-yielding_cells=$(extract_yielding_cells)
+numYielding=$(extract_yielding)
 
-if [[ -z "${epsilon}" || -z "${sigma}" || -z "${yielding_cells}" ]]
+if [[ -z "${epsilon}" || -z "${sigma}" || -z "${numYielding}" ]]
 then
     echo "FAIL: Could not extract one or more regression quantities"
     exit 1
@@ -96,12 +96,12 @@ else
     failures=$((failures + 1))
 fi
 
-# --- yielding cells ---
-if (( yielding_cells >= YIELD_MIN && yielding_cells <= YIELD_MAX ))
+# --- number of yielding integration points ---
+if (( numYielding >= YIELD_MIN && numYielding <= YIELD_MAX ))
 then
-    printf "PASS: Yielding cells = %d\n" "${yielding_cells}"
+    printf "PASS: Number of yielding integration points = %d\n" "${numYielding}"
 else
-    printf "FAIL: Yielding cells = %d\n" "${yielding_cells}"
+    printf "FAIL: Number of yielding integration points = %d\n" "${numYielding}"
     failures=$((failures + 1))
 fi
 
