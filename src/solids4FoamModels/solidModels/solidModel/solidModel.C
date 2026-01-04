@@ -1779,7 +1779,7 @@ Foam::scalar Foam::solidModel::newDeltaT()
     {
         dt = min(dt, mechanical().newDeltaT());
     }
-    
+
     return dt;
 }
 
