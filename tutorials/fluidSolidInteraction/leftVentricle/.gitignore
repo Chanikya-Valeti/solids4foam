@@ -1,0 +1,21 @@
+# Generated mesh (supply separately or generate from Allrun)
+constant/fluid/polyMesh/
+constant/solid/polyMesh/
+
+# Parallel decomposition
+processor*/
+
+# Time directories (simulation output)
+[1-9]*/
+
+# Log files
+log.*
+
+# ParaView
+*.foam
+
+# Animation frames
+Animation/
+
+# postProcessing results
+postProcessing/

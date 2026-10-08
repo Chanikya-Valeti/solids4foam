@@ -1,0 +1,192 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  2412                                  |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+FoamFile
+{
+    version         2;
+    format          ascii;
+    class           dictionary;
+    object          controlDict;
+}
+
+application     solids4Foam;
+
+startFrom    startTime;
+
+startTime    0;
+
+stopAt          endTime;
+
+endTime    1;
+
+deltaT          5e-05;
+
+writeControl    timeStep;
+
+writeInterval   100;
+
+purgeWrite      0;
+
+writeFormat     ascii;
+
+writePrecision  6;
+
+writeCompression off;
+
+timeFormat      general;
+
+timePrecision   6;
+
+runTimeModifiable no;
+
+adjustTimeStep  no;
+
+functions
+{
+    inlet_phi
+    {
+        type            surfaceFieldValue;
+        libs            ( fieldFunctionObjects );
+        region          fluid;
+        regionType      patch;
+        name            inlet;
+        operation       sum;
+        fields          ( phi );
+        writeFields     false;
+        writeControl    timeStep;
+        writeInterval   100;
+        log             false;
+    }
+    inlet_p
+    {
+        type            surfaceFieldValue;
+        libs            ( fieldFunctionObjects );
+        region          fluid;
+        regionType      patch;
+        name            inlet;
+        operation       areaAverage;
+        fields          ( p );
+        writeFields     false;
+        writeControl    timeStep;
+        writeInterval   100;
+        log             false;
+    }
+    outlet_phi
+    {
+        type            surfaceFieldValue;
+        libs            ( fieldFunctionObjects );
+        region          fluid;
+        regionType      patch;
+        name            outlet;
+        operation       sum;
+        fields          ( phi );
+        writeFields     false;
+        writeControl    timeStep;
+        writeInterval   100;
+        log             false;
+    }
+    outlet_p
+    {
+        type            surfaceFieldValue;
+        libs            ( fieldFunctionObjects );
+        region          fluid;
+        regionType      patch;
+        name            outlet;
+        operation       areaAverage;
+        fields          ( p );
+        writeFields     false;
+        writeControl    timeStep;
+        writeInterval   100;
+        log             false;
+    }
+    patchDisplacements
+    {
+        type            solidDisplacements;
+        historyPatch    innerWall;
+    }
+    solidForce
+    {
+        type            solidForces;
+        region          solid;
+        historyPatch    innerWall;
+    }
+    forces
+    {
+        type            forces;
+        libs            ( "libforces.so" );
+        writeControl    timeStep;
+        writeInterval   1;
+        patches         ( innerWall );
+        "pName|p"       p;
+        "UName|U"       U;
+        "rhoName|rho"   rhoInf;
+        log             false;
+        rhoInf          1050;
+        CofR            ( 0.5 0.1 0 );
+        region          fluid;
+    }
+    fsiConvData
+    {
+        type            fsiConvergenceData;
+        region          fluid;
+    }
+    courantNo
+    {
+        type            CourantNo;
+        libs            ( fieldFunctionObjects );
+        region          fluid;
+        executeControl  timeStep;
+        executeInterval 1;
+        writeControl    none;
+        writeInterval   1;
+    }
+    courantNumberHistory
+    {
+        type            fieldMinMax;
+        libs            ( fieldFunctionObjects );
+        region          fluid;
+        fields          ( Co );
+        mode            magnitude;
+        location        false;
+        executeControl  timeStep;
+        executeInterval 1;
+        writeControl    timeStep;
+        writeInterval   1;
+    }
+    fluidSolverIterations
+    {
+        type            solverInfo;
+        libs            ( utilityFunctionObjects );
+        region          fluid;
+        fields          ( U p );
+        writeResidualFields false;
+        executeControl  timeStep;
+        executeInterval 1;
+        writeControl    timeStep;
+        writeInterval   1;
+    }
+    wallShearStress1
+    {
+        type            wallShearStress;
+        region          fluid;
+        libs            ( fieldFunctionObjects );
+        patches         ( innerWall );
+        writeFields     yes;
+        writePrecision  10;
+        writeControl    runTime;
+        writeInterval   0.01;
+    }
+}
+
+DebugSwitches
+{
+    elasticWallPressure 1;
+}
+
+
+// ************************************************************************* //

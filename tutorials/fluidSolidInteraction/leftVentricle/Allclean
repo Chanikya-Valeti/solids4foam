@@ -1,0 +1,29 @@
+#!/bin/bash
+
+set -Eeo pipefail
+set +u
+IFS=$'\n\t'
+
+caseDir="$(cd "$(dirname "$0")" && pwd)"
+cd "$caseDir"
+
+: "${WM_PROJECT_DIR:?OpenFOAM environment is not sourced}"
+
+. "$WM_PROJECT_DIR/bin/tools/CleanFunctions"
+
+# Remove solver results, processor directories and application logs while
+# preserving the initial 0 directory, the meshes and the case dictionaries
+cleanCase
+
+# Fields generated in 0/solid by setFibreField
+for field in f0 f0f t psi k et en el etf enf elf alphaRadians alphaRadiansf
+do
+    rm -f "0/solid/$field"
+done
+
+# Mesh sets written by checkMesh
+rm -rf constant/fluid/polyMesh/sets constant/solid/polyMesh/sets
+
+rm -rf postProcessing
+
+echo "Case cleaned: results and generated fibre fields removed."

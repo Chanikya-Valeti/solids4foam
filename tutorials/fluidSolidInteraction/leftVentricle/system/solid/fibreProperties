@@ -1,0 +1,69 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| solids4foam: solid mechanics and fluid-solid interaction simulations        |
+| Version:     v2.4                                                           |
+| Web:         https://solids4foam.github.io                                  |
+| Disclaimer:  This offering is not approved or endorsed by OpenCFD Limited,  |
+|              producer and distributor of the OpenFOAM software via          |
+|              www.openfoam.com, and owner of the OPENFOAM® and OpenCFD®      |
+|              trade marks.                                                   |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    location    "system/solid";
+    object      fibreProperties;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// Settings for the setFibreField utility (run: setFibreField -region solid)
+// Writes 0/solid/f0 (cells) and 0/solid/f0f (faces), which are read by the
+// electroMechanicalLaw in constant/solid/mechanicalProperties
+
+// Transmural coordinate t: 0 on the endocardium, 1 on the epicardium
+endocardiumPatches  (innerWall);
+epicardiumPatches   (outerWall);
+
+// Valve rings at the base of the ventricle (inflow/mitral and outflow/aortic)
+basePatches         (inlet outlet);
+
+// Helix angle at the endocardium and epicardium [degrees], varying linearly
+// through the wall. Physiological values are about +60/-60 (Bayer et al.
+// 2012); the Land et al. (2015) benchmark uses +90/-90. If the fibres come
+// out with the wrong handedness (e.g. a mirrored image coordinate system),
+// swap the signs.
+alphaEndo           60;
+alphaEpi           -60;
+
+// Longitudinal (apex -> base) reference direction
+//   laplace : gradient of an apico-basal Laplace coordinate (0 at the apex,
+//             1 on basePatches); follows the local shape of the ventricle
+//   uniform : a single long axis; given with longAxis, or apex -> base
+//             centroid when longAxis is omitted
+longitudinalDirection laplace;
+// longAxis         (0 0 1);
+
+// Apex: detected as the epicardial face furthest from the base centroid when
+// apexPoint is omitted. For laplace, cells within apexRadius of the apex are
+// fixed at 0 (default: 3% of the apex-to-base distance)
+// apexPoint        (0.08 0.06 0.002);
+// apexRadius       2e-3;
+
+// Numerics (independent of the case's fvSchemes and fvSolution)
+gradScheme          leastSquares;
+nNonOrthCorr        20;     // maximum number of non-orthogonal correctors
+nonOrthTolerance    1e-6;   // stop once a corrector's initial residual is below this
+solver
+{
+    solver          PCG;
+    preconditioner  DIC;
+    tolerance       1e-10;
+    relTol          0;
+}
+
+// Also write t, et, en, el, alphaRadians (and psi, k for laplace) for
+// checking in ParaView
+writeIntermediateFields yes;
+
+// ************************************************************************* //

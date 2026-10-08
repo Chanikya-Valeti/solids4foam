@@ -1,0 +1,85 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| solids4foam: solid mechanics and fluid-solid interaction simulations        |
+| Version:     v2.4                                                           |
+| Web:         https://solids4foam.github.io                                  |
+| Disclaimer:  This offering is not approved or endorsed by OpenCFD Limited,  |
+|              producer and distributor of the OpenFOAM software via          |
+|              www.openfoam.com, and owner of the OPENFOAM® and OpenCFD®      |
+|              trade marks.                                                   |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    location    "constant/solid";
+    object      mechanicalProperties;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+planeStress no;
+
+mechanical
+(
+    myocardium
+    {
+        // Active + passive myocardium: electroMechanicalLaw adds the active
+        // stress Ta (F f0)(F f0)/J along the fibres to the stress of the
+        // passive law. Requires 0/solid/f0 and 0/solid/f0f, written by
+        //     setFibreField -region solid
+        // and a nonlinear-geometry solid model (see solidProperties)
+        type            electroMechanicalLaw;
+        rho             rho [1 -3 0 0 0 0 0] 1200;
+
+        // Active tension Ta(t) [Pa], uniform in space. The table in
+        // constant/activeTension.dat is a twitch aligned with the flow-rate
+        // files: onset when the prescribed inflow ends (0.65 s), peak 60 kPa
+        // at 0.78 s (mid-ejection), relaxed at 1.0 s. 'repeat' makes it
+        // periodic for multi-cycle runs. The peak value is a tuning parameter
+        // (60 kPa is the Land et al. 2015 benchmark value)
+        activeTensionSeries
+        {
+            "file|fileName"     "$FOAM_CASE/constant/activeTension.dat";
+            outOfBounds         repeat;
+            interpolationScheme linear;
+        }
+
+        // Alternative: a constant tension ramped linearly over rampTime
+        // (remove activeTensionSeries to use this)
+        // activeTension   activeTension [1 -1 -2 0 0 0 0] 60e3;
+        // rampTime        0.1;
+
+        passiveMechanicalLaw
+        {
+            // Guccione et al. (1991) transversely isotropic law; parameters
+            // from the Land et al. (2015) benchmark (Problem 3)
+            type            GuccioneElastic;
+            k               k [1 -1 -2 0 0 0 0] 2e3;
+            cf              8;
+            ct              2;
+            cfs             4;
+
+            // Penalty bulk modulus enforcing near-incompressibility.
+            // The small-strain shear modulus is mu = k (cf + ct + cfs)/6
+            // = 4.7 kPa; 100 x mu (5e5) is usual for passive inflation, but
+            // with Ta = 60 kPa it allows ~4% tissue volume change (Ta/3K), so
+            // a stiffer value is used here. Lower it if SNES struggles
+            bulkModulus     bulkModulus [1 -1 -2 0 0 0 0] 2e6;
+
+            // Read the fibre field f0 from 0/solid (from setFibreField)
+            uniformFibreField no;
+            calculateStressInLocalCoordinateSystem no;
+        }
+    }
+
+    // Original linear elastic material (no fibres, no active tension)
+    // myocardium
+    // {
+    //     type            linearElastic;
+    //     rho             rho [1 -3 0 0 0 0 0]  1200;
+    //     E               E   [1 -1 -2 0 0 0 0] 640E3;
+    //     nu              nu  [0 0 0 0 0 0 0]   0.45;
+    // }
+);
+
+// ************************************************************************* //

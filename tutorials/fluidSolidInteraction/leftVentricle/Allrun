@@ -1,0 +1,35 @@
+#!/bin/bash
+
+set -Eeo pipefail
+set +u
+IFS=$'\n\t'
+
+caseDir="$(cd "$(dirname "$0")" && pwd)"
+cd "$caseDir"
+
+export DYLD_LIBRARY_PATH="${DYLD_LIBRARY_PATH:-}"
+: "${FOAM_LD_LIBRARY_PATH:=}"
+: "${WM_PROJECT_DIR:?OpenFOAM environment not sourced}"
+
+. "$WM_PROJECT_DIR/bin/tools/RunFunctions"
+source solids4FoamScripts.sh
+
+# Myocardial fibre field (0/solid/f0, 0/solid/f0f) for the active tension in
+# electroMechanicalLaw; settings in system/solid/fibreProperties
+solids4Foam::runApplication -s solid \
+    setFibreField -region solid
+
+solids4Foam::runApplication -o -s fluid \
+    decomposePar -region fluid -force
+
+solids4Foam::runApplication -o -s solid \
+    decomposePar -region solid -force
+
+solids4Foam::runParallel -o -np "${SLURM_NTASKS:-8}" \
+    solids4Foam
+
+solids4Foam::runApplication -o -s fluid \
+    reconstructPar -region fluid 
+
+solids4Foam::runApplication -o -s solid \
+    reconstructPar -region solid

@@ -1,0 +1,10 @@
+FoamFile
+{ version 2.0; format ascii; class dictionary; object createPatchDict; }
+pointSync false;
+patches
+(
+    { name innerWall; patchInfo { type wall; } constructFrom patches; patches (innerWall); }
+    { name outerWall; patchInfo { type wall; } constructFrom patches; patches (outerWall); }
+    { name inletRing; patchInfo { type wall; } constructFrom patches; patches (inletRing); }
+    { name outletRing; patchInfo { type wall; } constructFrom patches; patches (outletRing); }
+);
