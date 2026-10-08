@@ -30,7 +30,11 @@ ddtSchemes
 
 gradSchemes
 {
-    default            leastSquaresS4f;
+    // leastSquares: standard scheme used by setFibreField (scalar Laplace fields)
+    // leastSquaresS4f: required by solids4Foam for grad(D) with PETSc SNES
+    default            leastSquares;
+    grad(D)            leastSquaresS4f;
+    grad(DD)           leastSquaresS4f;
 }
 
 divSchemes

@@ -15,8 +15,10 @@ cd "$caseDir"
 # preserving the initial 0 directory, the meshes and the case dictionaries
 cleanCase
 
-# Fields generated in 0/solid by setFibreField
-for field in f0 f0f t psi k et en el etf enf elf alphaRadians alphaRadiansf
+# Only remove setFibreField OUTPUTS (f0, f0f).
+# The Laplace-solved INPUT fields (t, el, en, et, alphaRadians, psi, k, ...)
+# must remain – setFibreField reads them to compute f0.
+for field in f0 f0f
 do
     rm -f "0/solid/$field"
 done

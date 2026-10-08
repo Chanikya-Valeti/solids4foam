@@ -19,6 +19,31 @@ FoamFile
 
 solvers
 {
+    // Laplace field solvers used by setFibreField (LDRBM)
+    t
+    {
+        solver          PCG;
+        preconditioner  DIC;
+        tolerance       1e-8;
+        relTol          0.01;
+    }
+
+    psi
+    {
+        $t;
+    }
+
+    el
+    {
+        solver          PBiCGStab;
+        preconditioner  DILU;
+        tolerance       1e-8;
+        relTol          0.01;
+    }
+
+    en  { $el; }
+    et  { $el; }
+
     D
     {
         solver    petsc;

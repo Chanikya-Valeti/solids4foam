@@ -32,22 +32,10 @@ mechanical
         rho             rho [1 -3 0 0 0 0 0] 1200;
 
         // Active tension Ta(t) [Pa], uniform in space. The table in
-        // constant/activeTension.dat is a twitch aligned with the flow-rate
-        // files: onset when the prescribed inflow ends (0.65 s), peak 60 kPa
-        // at 0.78 s (mid-ejection), relaxed at 1.0 s. 'repeat' makes it
-        // periodic for multi-cycle runs. The peak value is a tuning parameter
-        // (60 kPa is the Land et al. 2015 benchmark value)
-        activeTensionSeries
-        {
-            "file|fileName"     "$FOAM_CASE/constant/activeTension.dat";
-            outOfBounds         repeat;
-            interpolationScheme linear;
-        }
-
-        // Alternative: a constant tension ramped linearly over rampTime
-        // (remove activeTensionSeries to use this)
-        // activeTension   activeTension [1 -1 -2 0 0 0 0] 60e3;
-        // rampTime        0.1;
+        // Active tension: linearly ramped from 0 to activeTension over rampTime.
+        // Peak value 60 kPa from Land et al. (2015) Problem 3 benchmark.
+        activeTension   activeTension [1 -1 -2 0 0 0 0] 60e3;
+        rampTime        0.1;
 
         passiveMechanicalLaw
         {
